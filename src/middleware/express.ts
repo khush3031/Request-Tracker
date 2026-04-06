@@ -95,13 +95,23 @@ function getDashboardHtml(origin: string): string {
     .hdr .last{font-size:.75em;color:#64748b;margin-top:4px}
     .live-dot{display:inline-block;width:8px;height:8px;background:#22c55e;border-radius:50%;margin-right:5px;animation:pulse 2s infinite}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-    /* Time range pills */
+    /* Time range */
     .range-wrap{margin-bottom:28px}
-    .range-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#64748b;margin-bottom:8px}
-    .pills{display:flex;flex-wrap:wrap;gap:6px}
-    .pill{padding:5px 13px;border-radius:999px;font-size:11px;font-weight:600;border:1.5px solid #334155;background:#0f172a;color:#94a3b8;cursor:pointer;transition:all .15s}
-    .pill:hover{border-color:#6366f1;color:#c7d2fe}
-    .pill.active{background:#6366f1;border-color:#6366f1;color:#fff}
+    .range-row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+    .range-group{display:flex;flex-direction:column;gap:4px}
+    .range-label{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#64748b}
+    .range-select{padding:8px 32px 8px 12px;background:#0f172a;border:1.5px solid #334155;border-radius:8px;font-size:12px;color:#e2e8f0;outline:none;cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;min-width:160px}
+    .range-select:focus{border-color:#6366f1}
+    .date-input{padding:8px 12px;background:#0f172a;border:1.5px solid #334155;border-radius:8px;font-size:12px;color:#e2e8f0;outline:none;cursor:pointer;color-scheme:dark}
+    .date-input:focus{border-color:#6366f1}
+    .range-divider{color:#334155;font-size:14px;padding-bottom:8px}
+    .apply-btn{padding:8px 16px;background:#6366f1;border:none;border-radius:8px;font-size:12px;font-weight:600;color:#fff;cursor:pointer;transition:background .15s;white-space:nowrap}
+    .apply-btn:hover{background:#5254cc}
+    .clear-range-btn{padding:8px 12px;background:transparent;border:1.5px solid #334155;border-radius:8px;font-size:12px;font-weight:600;color:#94a3b8;cursor:pointer;transition:all .15s;white-space:nowrap}
+    .clear-range-btn:hover{border-color:#6366f1;color:#c7d2fe}
+    .active-range-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;background:#6366f120;border:1px solid #6366f140;border-radius:6px;font-size:11px;color:#a5b4fc;margin-top:8px}
+    .active-range-badge span{cursor:pointer;opacity:.7;font-size:13px}
+    .active-range-badge span:hover{opacity:1}
     /* Stats */
     .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:28px}
     .scard{background:#0f172a;border:1px solid #334155;border-radius:12px;padding:18px}
@@ -177,8 +187,43 @@ function getDashboardHtml(origin: string): string {
 
   <!-- Time range -->
   <div class="range-wrap">
-    <div class="range-label">Show data for last</div>
-    <div class="pills" id="pills"></div>
+    <div class="range-row">
+      <div class="range-group">
+        <div class="range-label">Show data for last</div>
+        <select class="range-select" id="rangeSelect" onchange="onRangeChange()">
+          <option value="300000">5 minutes</option>
+          <option value="600000">10 minutes</option>
+          <option value="900000">15 minutes</option>
+          <option value="1200000">20 minutes</option>
+          <option value="1800000">30 minutes</option>
+          <option value="2700000">45 minutes</option>
+          <option value="3600000">1 hour</option>
+          <option value="7200000">2 hours</option>
+          <option value="21600000">6 hours</option>
+          <option value="86400000">24 hours</option>
+          <option value="604800000">7 days</option>
+          <option value="Infinity" selected>All time</option>
+          <option value="custom">Custom range&hellip;</option>
+        </select>
+      </div>
+      <div id="customRangeGroup" style="display:none;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <div class="range-group">
+          <div class="range-label">From</div>
+          <input type="date" class="date-input" id="dateFrom">
+        </div>
+        <div class="range-divider">&rarr;</div>
+        <div class="range-group">
+          <div class="range-label">To</div>
+          <input type="date" class="date-input" id="dateTo">
+        </div>
+        <button class="apply-btn" onclick="applyCustomRange()">Apply</button>
+        <button class="clear-range-btn" onclick="clearCustomRange()">Clear</button>
+      </div>
+    </div>
+    <div id="activeRangeBadge" style="display:none" class="active-range-badge">
+      <span id="activeRangeText"></span>
+      <span onclick="clearCustomRange()">&#x2715;</span>
+    </div>
   </div>
 
   <div id="alertBox" style="display:none"></div>
@@ -265,25 +310,47 @@ function getDashboardHtml(origin: string): string {
 
 <script>
   const DATA_URL = '${dataUrl}';
-  const RANGES = [
-    {l:'5 min',ms:5*60*1000},{l:'10 min',ms:10*60*1000},{l:'15 min',ms:15*60*1000},
-    {l:'20 min',ms:20*60*1000},{l:'30 min',ms:30*60*1000},{l:'45 min',ms:45*60*1000},
-    {l:'1 hour',ms:60*60*1000},{l:'2 hours',ms:2*60*60*1000},{l:'6 hours',ms:6*60*60*1000},
-    {l:'All',ms:Infinity}
-  ];
   const EP_PAGE = 7;
   const REQ_PAGE = 25;
-  let rangeMs = Infinity, allData = null, allEp = [], showAll = false, chart = null, recentPage = 1;
+  let rangeMs = Infinity, customFrom = null, customTo = null;
+  let allData = null, allEp = [], showAll = false, chart = null, recentPage = 1;
 
-  // Build pills
-  const pillsEl = document.getElementById('pills');
-  RANGES.forEach(r => {
-    const b = document.createElement('button');
-    b.className = 'pill' + (r.ms === Infinity ? ' active' : '');
-    b.textContent = r.l;
-    b.onclick = () => { rangeMs = r.ms; document.querySelectorAll('.pill').forEach(p=>p.classList.remove('active')); b.classList.add('active'); if(allData) render(allData); };
-    pillsEl.appendChild(b);
-  });
+  function onRangeChange(){
+    const val = document.getElementById('rangeSelect').value;
+    const cg = document.getElementById('customRangeGroup');
+    if(val === 'custom'){
+      cg.style.display = 'flex';
+      const today = new Date().toISOString().split('T')[0];
+      if(!document.getElementById('dateFrom').value) document.getElementById('dateFrom').value = today;
+      if(!document.getElementById('dateTo').value) document.getElementById('dateTo').value = today;
+    } else {
+      cg.style.display = 'none';
+      customFrom = null; customTo = null;
+      rangeMs = val === 'Infinity' ? Infinity : parseInt(val);
+      document.getElementById('activeRangeBadge').style.display = 'none';
+      if(allData) render(allData);
+    }
+  }
+
+  function applyCustomRange(){
+    const from = document.getElementById('dateFrom').value;
+    const to = document.getElementById('dateTo').value;
+    if(!from || !to){ alert('Please select both From and To dates'); return; }
+    customFrom = new Date(from).getTime();
+    customTo = new Date(to).getTime() + 86399999;
+    rangeMs = null;
+    document.getElementById('activeRangeBadge').style.display = 'inline-flex';
+    document.getElementById('activeRangeText').textContent = from + ' \u2192 ' + to;
+    if(allData) render(allData);
+  }
+
+  function clearCustomRange(){
+    customFrom = null; customTo = null; rangeMs = Infinity;
+    document.getElementById('rangeSelect').value = 'Infinity';
+    document.getElementById('customRangeGroup').style.display = 'none';
+    document.getElementById('activeRangeBadge').style.display = 'none';
+    if(allData) render(allData);
+  }
 
   function fmt(ms){ return Math.round(ms)+'ms'; }
   function kb(b){ return (b/1024).toFixed(2)+' KB'; }
@@ -374,13 +441,16 @@ function getDashboardHtml(origin: string): string {
   }
 
   function filterByRange(reqs){
+    if(customFrom !== null && customTo !== null)
+      return reqs.filter(r=>r.timestamp>=customFrom && r.timestamp<=customTo);
     if(rangeMs===Infinity) return reqs;
     const cutoff=Date.now()-rangeMs;
     return reqs.filter(r=>r.timestamp>=cutoff);
   }
 
   function computeStats(reqs, fallback){
-    if(rangeMs===Infinity) return fallback;
+    const isFiltered = (customFrom !== null && customTo !== null) || rangeMs !== Infinity;
+    if(!isFiltered) return fallback;
     const total=reqs.length;
     if(!total) return {...fallback,totalRequests:0,averageResponseTime:0,p95ResponseTime:0,errorRate:0,averageNetworkUsage:0,totalNetworkUsage:0};
     const sorted=[...reqs].sort((a,b)=>a.duration-b.duration);
