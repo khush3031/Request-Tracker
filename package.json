@@ -20,7 +20,7 @@
     "dev": "tsc --watch",
     "build": "tsc && npm run build:esm",
     "build:esm": "tsc --module es2020 --outDir dist/esm --declaration",
-    "test": "jest",
+    "test": "jest --passWithNoTests",
     "test:watch": "jest --watch",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
@@ -28,6 +28,11 @@
     "dashboard": "cd dashboard && npm run dev",
     "example": "node examples/express-basic.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "keywords": [
     "request-tracker",
     "analytics",
@@ -40,16 +45,16 @@
     "latency",
     "metrics"
   ],
-  "author": "",
+  "author": "Khushboo",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR_USERNAME/request-tracker-pro"
+    "url": "https://github.com/khush3031/Request-Tracker.git"
   },
   "bugs": {
-    "url": "https://github.com/YOUR_USERNAME/request-tracker-pro/issues"
+    "url": "https://github.com/khush3031/Request-Tracker/issues"
   },
-  "homepage": "https://github.com/YOUR_USERNAME/request-tracker-pro#readme",
+  "homepage": "https://github.com/khush3031/Request-Tracker#readme",
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/jest": "^29.5.11",
