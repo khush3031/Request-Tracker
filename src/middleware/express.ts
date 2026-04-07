@@ -23,6 +23,12 @@ export function setupRequestTracker(app: any, config?: Partial<TrackerConfig>) {
   app.get('/request-tracker', (req: any, res: any) => {
     const origin = `${req.protocol}://${req.get('host')}`;
     res.setHeader('Content-Type', 'text/html');
+    // Override any strict CSP set by security middleware (e.g. helmet) so that
+    // the dashboard's inline script and the Chart.js CDN load correctly.
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:"
+    );
     res.send(getDashboardHtml(origin));
   });
 
