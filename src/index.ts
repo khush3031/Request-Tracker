@@ -10,6 +10,8 @@ export { RequestAnalyzer } from './analytics/analyzer';
 export { createRequestTracker, setupRequestTracker } from './middleware/express';
 export { MemoryStorage } from './storage/memory';
 export { LoggingOnlyStorage } from './storage/logging';
+export { MongoDBStorage } from './storage/mongodb';
+export { PostgreSQLStorage } from './storage/postgresql';
 
 import { RequestTracker } from './tracker';
 

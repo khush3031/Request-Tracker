@@ -53,3 +53,6 @@ coverage/
 dir_root.txt
 setup.sh
 .claude/
+
+package-lock.json
+yarn.lock

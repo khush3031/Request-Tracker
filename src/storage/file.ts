@@ -45,6 +45,7 @@ export class FileStorage extends StorageAdapter {
 
   private flush(): void {
     try {
+      fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
       const arr = Array.from(this.requests.values());
       fs.writeFileSync(this.filePath, JSON.stringify(arr), 'utf8');
       this.dirty = false;

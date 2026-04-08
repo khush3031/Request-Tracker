@@ -2,6 +2,8 @@ import { StorageAdapter } from './storage/base.js';
 import { MemoryStorage } from './storage/memory.js';
 import { FileStorage } from './storage/file.js';
 import { LoggingOnlyStorage } from './storage/logging.js';
+import { MongoDBStorage } from './storage/mongodb.js';
+import { PostgreSQLStorage } from './storage/postgresql.js';
 import { RequestAnalyzer } from './analytics/analyzer.js';
 import { RequestFormatter } from './utils/formatter';
 import { generateRequestId, getRequestSize, getResponseSize, getClientIP, parseDuration } from './utils/helpers';
@@ -95,6 +97,16 @@ export class RequestTracker implements RequestTrackerInstance {
       case StorageType.FILE:
         return new FileStorage(storageConfig.file ? { filePath: storageConfig.file.path } : {});
 
+      case StorageType.MONGODB:
+        return new MongoDBStorage(
+          storageConfig.mongodb || { collection: 'request_tracker_logs' }
+        );
+
+      case StorageType.POSTGRESQL:
+        return new PostgreSQLStorage(
+          storageConfig.postgresql || { table: 'request_tracker_logs' }
+        );
+
       default:
         // Default to file storage so data persists across restarts
         return new FileStorage({});
@@ -137,7 +149,7 @@ export class RequestTracker implements RequestTrackerInstance {
           id: requestId,
           timestamp: startTime,
           method: req.method,
-          path: req.path || req.url,
+          path: (req.originalUrl || req.url || req.path).split('?')[0],
           fullUrl: `${req.protocol}://${req.get('host')}${req.originalUrl || req.url}`,
           statusCode: res.statusCode,
           statusMessage: res.statusMessage || '',

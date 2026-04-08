@@ -111,11 +111,13 @@ export interface TrackerConfig {
 export interface StorageConfig {
   primary: StorageType;
   secondary?: StorageType;
-  
+
   memory?: MemoryStorageConfig;
   file?: FileStorageConfig;
   database?: DatabaseStorageConfig;
   loggingOnly?: LoggingOnlyConfig;
+  mongodb?: MongoDBStorageConfig;
+  postgresql?: PostgreSQLStorageConfig;
 }
 
 export interface MemoryStorageConfig {
@@ -158,6 +160,28 @@ export interface LoggingOnlyConfig {
   level?: LogLevel;
   includeFields?: string[];
   customFormatter?: (data: TrackedRequest) => string;
+}
+
+export interface MongoDBStorageConfig {
+  /** MongoDB connection URI e.g. mongodb://localhost:27017/mydb */
+  uri?: string;
+  /** Pass an existing mongoose connection or native MongoClient Db instead of a URI */
+  connection?: any;
+  /** Collection name — received from caller, defaults to 'request_tracker_logs' */
+  collection?: string;
+  /** Auto-delete documents older than N days via TTL index. Default: 30 */
+  ttlDays?: number;
+}
+
+export interface PostgreSQLStorageConfig {
+  /** PostgreSQL connection URI e.g. postgresql://user:pass@localhost:5432/mydb */
+  uri?: string;
+  /** Pass an existing pg Pool or Client instead of a URI */
+  connection?: any;
+  /** Table name — received from caller, defaults to 'request_tracker_logs' */
+  table?: string;
+  /** Auto-delete rows older than N days. Default: 30 */
+  ttlDays?: number;
 }
 
 /**
