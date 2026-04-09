@@ -1,6 +1,6 @@
-import { StorageAdapter, applyQueryFilters } from './base';
-import { TrackedRequest, LoggingOnlyConfig, QueryOptions } from '../types';
-import { RequestFormatter } from '../utils/formatter';
+import { StorageAdapter, applyQueryFilters } from './base.js';
+import { TrackedRequest, LoggingOnlyConfig, QueryOptions } from '../types.js';
+import { RequestFormatter } from '../utils/formatter.js';
 
 /**
  * Logging-only storage adapter

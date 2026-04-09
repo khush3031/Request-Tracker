@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { StorageAdapter, applyQueryFilters } from './base';
-import { TrackedRequest, QueryOptions } from '../types';
+import { StorageAdapter, applyQueryFilters } from './base.js';
+import { TrackedRequest, QueryOptions } from '../types.js';
 
 /**
  * File-based persistent storage adapter.

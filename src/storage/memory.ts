@@ -1,5 +1,5 @@
-import { StorageAdapter, applyQueryFilters } from './base';
-import { TrackedRequest, MemoryStorageConfig, QueryOptions } from '../types';
+import { StorageAdapter, applyQueryFilters } from './base.js';
+import { TrackedRequest, MemoryStorageConfig, QueryOptions } from '../types.js';
 
 /**
  * In-memory storage adapter

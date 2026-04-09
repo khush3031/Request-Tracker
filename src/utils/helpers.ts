@@ -1,4 +1,4 @@
-import { TrackedRequest } from '../types';
+import { TrackedRequest } from '../types.js';
 
 /**
  * Helper utilities

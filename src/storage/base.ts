@@ -1,4 +1,4 @@
-import { TrackedRequest, QueryOptions } from '../types';
+import { TrackedRequest, QueryOptions } from '../types.js';
 
 /**
  * Base storage adapter interface

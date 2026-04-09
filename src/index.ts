@@ -3,16 +3,17 @@
  * Advanced HTTP request tracking and analytics middleware
  */
 
-export * from './types';
-export { RequestTracker, tracker } from './tracker';
-export { RequestFormatter } from './utils/formatter';
-export { RequestAnalyzer } from './analytics/analyzer';
-export { createRequestTracker, setupRequestTracker } from './middleware/express';
-export { MemoryStorage } from './storage/memory';
-export { LoggingOnlyStorage } from './storage/logging';
-export { MongoDBStorage } from './storage/mongodb';
-export { PostgreSQLStorage } from './storage/postgresql';
+export * from './types.js';
+export { RequestTracker, tracker } from './tracker.js';
+export { RequestFormatter } from './utils/formatter.js';
+export { RequestAnalyzer } from './analytics/analyzer.js';
+export { createRequestTracker, setupRequestTracker } from './middleware/express.js';
+export { MemoryStorage } from './storage/memory.js';
+export { LoggingOnlyStorage } from './storage/logging.js';
+export { MongoDBStorage } from './storage/mongodb.js';
+export { PostgreSQLStorage } from './storage/postgresql.js';
+export { RequestTrackerMiddleware, RequestTrackerInterceptor, handleTrackerRequest } from './middleware/nestjs.js';
 
-import { RequestTracker } from './tracker';
+import { RequestTracker } from './tracker.js';
 
 export default RequestTracker;

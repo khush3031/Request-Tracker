@@ -5,8 +5,8 @@ import { LoggingOnlyStorage } from './storage/logging.js';
 import { MongoDBStorage } from './storage/mongodb.js';
 import { PostgreSQLStorage } from './storage/postgresql.js';
 import { RequestAnalyzer } from './analytics/analyzer.js';
-import { RequestFormatter } from './utils/formatter';
-import { generateRequestId, getRequestSize, getResponseSize, getClientIP, parseDuration } from './utils/helpers';
+import { RequestFormatter } from './utils/formatter.js';
+import { generateRequestId, getRequestSize, getResponseSize, getClientIP, parseDuration } from './utils/helpers.js';
 import {
   TrackedRequest,
   TrackerConfig,
@@ -20,7 +20,7 @@ import {
   EndpointStats,
   NetworkAnalytics,
   LogLevel
-} from './types';
+} from './types.js';
 
 /**
  * Main Request Tracker Class

@@ -1,6 +1,6 @@
-import { StorageAdapter, applyQueryFilters } from './base';
-import { TrackedRequest, PostgreSQLStorageConfig, QueryOptions } from '../types';
-import { RequestFormatter } from '../utils/formatter';
+import { StorageAdapter, applyQueryFilters } from './base.js';
+import { TrackedRequest, PostgreSQLStorageConfig, QueryOptions } from '../types.js';
+import { RequestFormatter } from '../utils/formatter.js';
 
 /**
  * PostgreSQL storage adapter

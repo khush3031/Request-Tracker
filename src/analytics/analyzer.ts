@@ -1,5 +1,5 @@
-import { TrackedRequest, RequestStats, EndpointStats, NetworkAnalytics } from '../types';
-import { calculatePercentile, groupBy, getTimeGroup } from '../utils/helpers';
+import { TrackedRequest, RequestStats, EndpointStats, NetworkAnalytics } from '../types.js';
+import { calculatePercentile, groupBy, getTimeGroup } from '../utils/helpers.js';
 
 /**
  * Analytics analyzer for request tracking data
