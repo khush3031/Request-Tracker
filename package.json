@@ -1,6 +1,6 @@
 {
   "name": "request-tracker-pro",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Advanced HTTP request tracking and analytics middleware for Node.js. Track latency, network usage, response times, and detailed metrics with flexible storage options.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

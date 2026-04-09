@@ -66,11 +66,8 @@ export class LoggingOnlyStorage extends StorageAdapter {
       return JSON.stringify(RequestFormatter.toJSON(request));
     }
 
-    if (this.config.format === 'text') {
-      return `[${RequestFormatter.formatTimestamp(request.timestamp)}] ${request.method} ${request.path} - ${request.statusCode} (${RequestFormatter.formatDuration(request.duration)}) - Network: ${RequestFormatter.formatBytes(request.networkUsage)}`;
-    }
-
-    return '';
+    // Default: text format (also handles format === 'text' explicitly)
+    return `[${RequestFormatter.formatTimestamp(request.timestamp)}] ${request.method} ${request.path} - ${request.statusCode} (${RequestFormatter.formatDuration(request.duration)}) - Network: ${RequestFormatter.formatBytes(request.networkUsage)}`;
   }
 
   /**
@@ -86,15 +83,16 @@ export class LoggingOnlyStorage extends StorageAdapter {
       level = 'warn';
     }
 
-    // Use Winston or console
-    if (this.logger && typeof this.logger.log === 'function') {
-      // Winston-like logger
-      this.logger.log(level, message);
-    } else if (this.logger && typeof (this.logger as any)[level] === 'function') {
-      // Console-like logger
-      (this.logger as any)[level](message);
+    const customLogger = this.config.logger;
+
+    // Winston-like logger (has .log(level, message) signature)
+    if (customLogger && typeof customLogger.log === 'function') {
+      customLogger.log(level, message);
+    } else if (customLogger && typeof customLogger[level] === 'function') {
+      // Custom logger with level methods (e.g. { info, warn, error })
+      customLogger[level](message);
     } else {
-      // Fallback to console
+      // Fallback: plain console — pick the right method by level
       const consoleMethod = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log';
       (console as any)[consoleMethod](message);
     }
