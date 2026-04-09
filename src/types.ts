@@ -106,12 +106,93 @@ export interface TrackerConfig {
 }
 
 /**
+ * Per-adapter config for the multi-storage `adapters` array.
+ * Each entry has a `type` discriminant plus its own options inline.
+ */
+export interface MemoryAdapterConfig {
+  type: 'memory';
+  /** Max number of requests to keep in RAM. Default: 5000 */
+  maxSize?: number;
+  /** Time-to-live in ms. Default: 3 600 000 (1 h) */
+  ttl?: number;
+  enableCompression?: boolean;
+  onMaxReached?: 'compress' | 'archive' | 'discard';
+}
+
+export interface FileAdapterConfig {
+  type: 'file';
+  /** Absolute or relative path to the JSON file. Default: ./.request-tracker-data.json */
+  path?: string;
+  /** Max requests stored per file. Default: 50 000 */
+  maxSize?: number;
+  /** Flush-to-disk interval in ms. Default: 5000 */
+  flushIntervalMs?: number;
+}
+
+export interface LoggingAdapterConfig {
+  type: 'logging-only';
+  /** Winston-compatible logger or any object with .info/.warn/.error. Default: console */
+  logger?: any;
+  /** Output format. Default: 'text' */
+  format?: 'json' | 'text';
+  level?: LogLevel;
+  customFormatter?: (data: TrackedRequest) => string;
+}
+
+export interface MongoDBAdapterConfig {
+  type: 'mongodb';
+  /** MongoDB connection URI e.g. mongodb://localhost:27017/mydb */
+  uri?: string;
+  /** Pass an existing mongoose connection / MongoClient Db instead of a URI */
+  connection?: any;
+  /** Collection name. Default: 'request_tracker_logs' */
+  collection?: string;
+  /** Auto-delete documents older than N days (TTL index). Default: 30 */
+  ttlDays?: number;
+}
+
+export interface PostgreSQLAdapterConfig {
+  type: 'postgresql';
+  /** PostgreSQL connection URI e.g. postgresql://user:pass@localhost:5432/mydb */
+  uri?: string;
+  /** Pass an existing pg Pool / Client instead of a URI */
+  connection?: any;
+  /** Table name. Default: 'request_tracker_logs' */
+  table?: string;
+  /** Auto-delete rows older than N days. Default: 30 */
+  ttlDays?: number;
+}
+
+export type StorageAdapterConfig =
+  | MemoryAdapterConfig
+  | FileAdapterConfig
+  | LoggingAdapterConfig
+  | MongoDBAdapterConfig
+  | PostgreSQLAdapterConfig;
+
+/**
  * Storage configuration
  */
 export interface StorageConfig {
-  primary: StorageType;
-  secondary?: StorageType;
+  /**
+   * Multi-adapter mode — every adapter in this array receives every write.
+   * Reads (query/getAll) fall through to the first adapter that returns data.
+   *
+   * @example
+   * storage: {
+   *   adapters: [
+   *     { type: 'file',         path: './logs/requests.json' },
+   *     { type: 'logging-only', format: 'text' },
+   *     { type: 'mongodb',      uri: 'mongodb://localhost:27017/mydb' },
+   *     { type: 'memory',       maxSize: 1000 },
+   *   ]
+   * }
+   */
+  adapters?: StorageAdapterConfig[];
 
+  // ── Legacy single-adapter config (kept for backwards compat) ──────────────
+  primary?: StorageType;
+  secondary?: StorageType;
   memory?: MemoryStorageConfig;
   file?: FileStorageConfig;
   database?: DatabaseStorageConfig;

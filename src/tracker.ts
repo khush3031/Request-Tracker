@@ -4,6 +4,7 @@ import { FileStorage } from './storage/file.js';
 import { LoggingOnlyStorage } from './storage/logging.js';
 import { MongoDBStorage } from './storage/mongodb.js';
 import { PostgreSQLStorage } from './storage/postgresql.js';
+import { MultiStorage } from './storage/multi.js';
 import { RequestAnalyzer } from './analytics/analyzer.js';
 import { RequestFormatter } from './utils/formatter.js';
 import { generateRequestId, getRequestSize, getResponseSize, getClientIP, parseDuration } from './utils/helpers.js';
@@ -11,6 +12,7 @@ import {
   TrackedRequest,
   TrackerConfig,
   StorageType,
+  StorageAdapterConfig,
   RequestStats,
   DashboardData,
   QueryOptions,
@@ -68,11 +70,19 @@ export class RequestTracker implements RequestTrackerInstance {
   }
 
   /**
-   * Initialize storage adapter based on configuration
+   * Initialize storage — supports both the new multi-adapter `adapters` array
+   * and the legacy `primary` single-adapter config.
    */
   private initializeStorage(): StorageAdapter {
     const storageConfig = this.config.storage;
 
+    // ── Multi-adapter mode ───────────────────────────────────────────────────
+    if (storageConfig.adapters && storageConfig.adapters.length > 0) {
+      const adapters = storageConfig.adapters.map(cfg => this.createSingleAdapter(cfg));
+      return adapters.length === 1 ? adapters[0] : new MultiStorage(adapters);
+    }
+
+    // ── Legacy single-adapter mode (backwards compat) ────────────────────────
     switch (storageConfig.primary) {
       case StorageType.MEMORY:
         return new MemoryStorage(
@@ -85,14 +95,7 @@ export class RequestTracker implements RequestTrackerInstance {
         );
 
       case StorageType.LOGGING:
-        return new LoggingOnlyStorage(
-          storageConfig.loggingOnly || {
-            logger: (typeof console !== 'undefined' ? console : undefined),
-            format: 'text' as const,
-            level: LogLevel.INFO,
-            includeFields: []
-          }
-        );
+        return new LoggingOnlyStorage(storageConfig.loggingOnly || {});
 
       case StorageType.FILE:
         return new FileStorage(storageConfig.file ? { filePath: storageConfig.file.path } : {});
@@ -108,7 +111,53 @@ export class RequestTracker implements RequestTrackerInstance {
         );
 
       default:
-        // Default to file storage so data persists across restarts
+        return new FileStorage({});
+    }
+  }
+
+  /** Build a single StorageAdapter from a StorageAdapterConfig entry. */
+  private createSingleAdapter(cfg: StorageAdapterConfig): StorageAdapter {
+    switch (cfg.type) {
+      case 'memory':
+        return new MemoryStorage({
+          maxSize: cfg.maxSize ?? 5000,
+          ttl: cfg.ttl ?? 3600000,
+          enableCompression: cfg.enableCompression ?? true,
+          onMaxReached: cfg.onMaxReached ?? 'discard',
+        });
+
+      case 'file':
+        return new FileStorage({
+          filePath: cfg.path,
+          maxSize: cfg.maxSize,
+          flushIntervalMs: cfg.flushIntervalMs,
+        });
+
+      case 'logging-only':
+        return new LoggingOnlyStorage({
+          logger: cfg.logger,
+          format: cfg.format,
+          level: cfg.level,
+          customFormatter: cfg.customFormatter,
+        });
+
+      case 'mongodb':
+        return new MongoDBStorage({
+          uri: cfg.uri,
+          connection: cfg.connection,
+          collection: cfg.collection ?? 'request_tracker_logs',
+          ttlDays: cfg.ttlDays,
+        });
+
+      case 'postgresql':
+        return new PostgreSQLStorage({
+          uri: cfg.uri,
+          connection: cfg.connection,
+          table: cfg.table ?? 'request_tracker_logs',
+          ttlDays: cfg.ttlDays,
+        });
+
+      default:
         return new FileStorage({});
     }
   }
