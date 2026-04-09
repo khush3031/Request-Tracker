@@ -13,6 +13,7 @@ export class MongoDBStorage extends StorageAdapter {
   private collection: any = null;
   private client: any = null;
   private ready: Promise<void>;
+  private connectError: Error | null = null;
 
   constructor(config: MongoDBStorageConfig) {
     super();
@@ -21,7 +22,12 @@ export class MongoDBStorage extends StorageAdapter {
       ttlDays: 30,
       ...config
     };
-    this.ready = this.connect();
+    // Catch here so the unhandled-rejection handler never fires —
+    // individual adapter failures are handled gracefully by MultiStorage.
+    this.ready = this.connect().catch(err => {
+      this.connectError = err;
+      console.warn(`[RequestTracker] MongoDB adapter disabled: ${err.message}`);
+    });
   }
 
   private async connect(): Promise<void> {
@@ -30,22 +36,22 @@ export class MongoDBStorage extends StorageAdapter {
     // Use existing mongoose/mongodb connection if provided
     if (this.config.connection) {
       const conn = this.config.connection;
-      // Support mongoose connection (conn.db) or raw mongodb Db object
       const db = conn.db ?? conn;
       this.collection = db.collection(collectionName);
       await this.ensureIndexes();
       return;
     }
 
-    // Connect via URI
     if (!this.config.uri) {
       throw new Error('[RequestTracker] MongoDBStorage requires either "uri" or "connection"');
     }
 
     let MongoClient: any;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      MongoClient = (require as any)('mongodb').MongoClient;
+      // Dynamic import works in both ESM and CJS (unlike require which fails in ESM).
+      // @ts-ignore — mongodb is an optional peer dep; not in devDependencies
+      const mod = await import('mongodb');
+      MongoClient = mod.MongoClient ?? (mod as any).default?.MongoClient;
     } catch {
       throw new Error(
         '[RequestTracker] MongoDBStorage requires the "mongodb" package. Run: npm install mongodb'
@@ -81,6 +87,7 @@ export class MongoDBStorage extends StorageAdapter {
 
   async save(request: TrackedRequest): Promise<void> {
     await this.ready;
+    if (this.connectError) return;
     await this.collection.insertOne({
       ...request,
       _id: request.id as any,
@@ -90,7 +97,7 @@ export class MongoDBStorage extends StorageAdapter {
 
   async saveBatch(requests: TrackedRequest[]): Promise<void> {
     await this.ready;
-    if (requests.length === 0) return;
+    if (this.connectError || requests.length === 0) return;
     const docs = requests.map(r => ({
       ...r,
       _id: r.id as any,
@@ -103,12 +110,14 @@ export class MongoDBStorage extends StorageAdapter {
 
   async get(id: string): Promise<TrackedRequest | null> {
     await this.ready;
+    if (this.connectError) return null;
     const doc = await this.collection.findOne({ _id: id as any });
     return doc ? this.toTrackedRequest(doc) : null;
   }
 
   async query(options: QueryOptions): Promise<TrackedRequest[]> {
     await this.ready;
+    if (this.connectError) return [];
     const filter: Record<string, any> = {};
 
     if (options.method) filter.method = options.method;
@@ -149,22 +158,26 @@ export class MongoDBStorage extends StorageAdapter {
 
   async getAll(): Promise<TrackedRequest[]> {
     await this.ready;
+    if (this.connectError) return [];
     const docs = await this.collection.find({}).sort({ timestamp: -1 }).limit(5000).toArray();
     return docs.map((d: any) => this.toTrackedRequest(d));
   }
 
   async delete(id: string): Promise<void> {
     await this.ready;
+    if (this.connectError) return;
     await this.collection.deleteOne({ _id: id as any });
   }
 
   async clear(): Promise<void> {
     await this.ready;
+    if (this.connectError) return;
     await this.collection.deleteMany({});
   }
 
   async count(): Promise<number> {
     await this.ready;
+    if (this.connectError) return 0;
     return this.collection.countDocuments();
   }
 

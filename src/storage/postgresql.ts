@@ -12,6 +12,7 @@ export class PostgreSQLStorage extends StorageAdapter {
   private config: PostgreSQLStorageConfig;
   private pool: any = null;
   private ready: Promise<void>;
+  private connectError: Error | null = null;
 
   constructor(config: PostgreSQLStorageConfig) {
     super();
@@ -20,13 +21,19 @@ export class PostgreSQLStorage extends StorageAdapter {
       ttlDays: 30,
       ...config
     };
-    this.ready = this.connect();
+    this.ready = this.connect().catch(err => {
+      this.connectError = err;
+      console.warn(`[RequestTracker] PostgreSQL adapter disabled: ${err.message}`);
+    });
   }
 
   private async connect(): Promise<void> {
     let Pool: any;
     try {
-      ({ Pool } = require('pg'));
+      // Dynamic import works in both ESM and CJS (unlike require which fails in ESM).
+      // @ts-ignore — pg is a peer dep; resolved at runtime
+      const mod = await import('pg');
+      Pool = mod.Pool ?? mod.default?.Pool ?? (mod as any).default;
     } catch {
       throw new Error(
         '[RequestTracker] PostgreSQLStorage requires the "pg" package. Run: npm install pg'
@@ -103,6 +110,7 @@ export class PostgreSQLStorage extends StorageAdapter {
 
   async save(request: TrackedRequest): Promise<void> {
     await this.ready;
+    if (this.connectError) return;
     const table = this.config.table || 'request_tracker_logs';
     await this.pool.query(
       `INSERT INTO "${table}" (
@@ -146,12 +154,13 @@ export class PostgreSQLStorage extends StorageAdapter {
 
   async saveBatch(requests: TrackedRequest[]): Promise<void> {
     await this.ready;
-    if (requests.length === 0) return;
+    if (this.connectError || requests.length === 0) return;
     await Promise.all(requests.map(r => this.save(r)));
   }
 
   async get(id: string): Promise<TrackedRequest | null> {
     await this.ready;
+    if (this.connectError) return null;
     const table = this.config.table || 'request_tracker_logs';
     const { rows } = await this.pool.query(`SELECT * FROM "${table}" WHERE id = $1`, [id]);
     return rows.length ? this.toTrackedRequest(rows[0]) : null;
@@ -159,6 +168,7 @@ export class PostgreSQLStorage extends StorageAdapter {
 
   async query(options: QueryOptions): Promise<TrackedRequest[]> {
     await this.ready;
+    if (this.connectError) return [];
     const table = this.config.table || 'request_tracker_logs';
     const conditions: string[] = [];
     const params: any[] = [];
@@ -197,6 +207,7 @@ export class PostgreSQLStorage extends StorageAdapter {
 
   async getAll(): Promise<TrackedRequest[]> {
     await this.ready;
+    if (this.connectError) return [];
     const table = this.config.table || 'request_tracker_logs';
     const { rows } = await this.pool.query(
       `SELECT * FROM "${table}" ORDER BY timestamp DESC LIMIT 5000`
@@ -206,18 +217,21 @@ export class PostgreSQLStorage extends StorageAdapter {
 
   async delete(id: string): Promise<void> {
     await this.ready;
+    if (this.connectError) return;
     const table = this.config.table || 'request_tracker_logs';
     await this.pool.query(`DELETE FROM "${table}" WHERE id = $1`, [id]);
   }
 
   async clear(): Promise<void> {
     await this.ready;
+    if (this.connectError) return;
     const table = this.config.table || 'request_tracker_logs';
     await this.pool.query(`DELETE FROM "${table}"`);
   }
 
   async count(): Promise<number> {
     await this.ready;
+    if (this.connectError) return 0;
     const table = this.config.table || 'request_tracker_logs';
     const { rows } = await this.pool.query(`SELECT COUNT(*) FROM "${table}"`);
     return parseInt(rows[0].count, 10);
