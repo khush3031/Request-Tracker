@@ -1,23 +1,22 @@
 # request-tracker-pro
 
-HTTP request tracking and analytics middleware for Node.js. Drop one line into your app and get a live dashboard showing latency, bandwidth, error rates, and every request — persisted across restarts.
+HTTP request tracking and analytics middleware for Node.js. Drop one line into your app and get a live dashboard showing latency, bandwidth, error rates, and every request — with flexible, multi-adapter storage.
 
-Works with **Express**, **NestJS**, and **Next.js**.
+Works with **Express**, **NestJS**, and **Next.js**. Supports **ESM** (`import`) and **CommonJS** (`require`).
 
 ---
 
 ## Features
 
-- **Live dashboard** at `/request-tracker` — dark-themed, auto-refreshes every 10s
-- **Persistent storage** — requests survive server restarts (saved to a local JSON file)
-- **Time-range filtering** — 5 min / 10 min / 1 hour / 6 hours / All
+- **Live dashboard** at `/request-tracker` — dark-themed, auto-refreshes every 10 s
+- **Multi-storage** — write to multiple backends simultaneously (file + MongoDB + console, etc.)
+- **Persistent storage** — file, MongoDB, and PostgreSQL adapters survive server restarts
+- **Time-range filtering** — 5 min / 10 min / 1 h / 6 h / All
 - **P95 latency** with plain-English labels ("Good — feels instant to users")
-- **Endpoint grouping** — groups `/api/users`, `/api/users/:id` under `/api/users`
-- **Search & filter** — search by path, filter by HTTP method
-- **Show more** — paginated endpoint list and request log
-- **Last accessed** tracking — shows when you last opened the dashboard
+- **Endpoint grouping** — groups `/api/users/:id` under `/api/users`
+- **Search & filter** — by path and HTTP method
 - **CSV / JSON export** via API
-- Zero external dependencies for core tracking
+- Zero required peer dependencies for core tracking
 
 ---
 
@@ -27,11 +26,35 @@ Works with **Express**, **NestJS**, and **Next.js**.
 npm install request-tracker-pro
 ```
 
+Optional peer deps (only needed when using those adapters):
+
+```bash
+npm install mongodb   # for MongoDB storage
+npm install pg        # for PostgreSQL storage
+```
+
 ---
 
 ## Quick Start
 
-### Express
+### Express — ESM
+
+```js
+import express from 'express';
+import { setupRequestTracker } from 'request-tracker-pro';
+
+const app = express();
+app.use(express.json());
+
+setupRequestTracker(app, {
+  storage: { primary: 'file' }   // persists across restarts
+});
+
+app.listen(3000);
+// Dashboard → http://localhost:3000/request-tracker
+```
+
+### Express — CommonJS
 
 ```js
 const express = require('express');
@@ -41,13 +64,10 @@ const app = express();
 app.use(express.json());
 
 setupRequestTracker(app, {
-  storage: { primary: 'file' } // persists across restarts
+  storage: { primary: 'file' }
 });
 
-app.get('/api/users', (req, res) => res.json({ users: [] }));
-
 app.listen(3000);
-// Dashboard: http://localhost:3000/request-tracker
 ```
 
 ### NestJS
@@ -55,7 +75,7 @@ app.listen(3000);
 ```ts
 // app.module.ts
 import { Module, MiddlewareConsumer } from '@nestjs/common';
-import { RequestTrackerMiddleware } from 'request-tracker-pro/middleware';
+import { RequestTrackerMiddleware } from 'request-tracker-pro';
 
 @Module({})
 export class AppModule {
@@ -69,14 +89,20 @@ export class AppModule {
 ```
 
 ```ts
-// main.ts — add dashboard routes to the underlying Express instance
+// main.ts — mount dashboard routes
+import { NestFactory } from '@nestjs/core';
+import { HttpAdapterHost } from '@nestjs/core';
 import { setupRequestTracker } from 'request-tracker-pro';
+import { AppModule } from './app.module';
 
-const app = await NestFactory.create(AppModule);
-const httpAdapter = app.get(HttpAdapterHost).httpAdapter;
-setupRequestTracker(httpAdapter.getInstance());
-await app.listen(3000);
-// Dashboard: http://localhost:3000/request-tracker
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  const { httpAdapter } = app.get(HttpAdapterHost);
+  setupRequestTracker(httpAdapter.getInstance());
+  await app.listen(3000);
+  // Dashboard → http://localhost:3000/request-tracker
+}
+bootstrap();
 ```
 
 ### Next.js — Pages Router
@@ -116,15 +142,13 @@ export const GET = trackRoute(async () => {
 
 Visit `http://localhost:3000/request-tracker` after starting your server.
 
-![Dashboard](https://via.placeholder.com/900x500/1e293b/6366f1?text=Request+Tracker+Dashboard)
-
 | Section | Description |
 |---|---|
 | Stats cards | Total requests, avg latency, P95, error rate, bandwidth |
-| Latency chart | Response time over last N requests |
-| API Endpoints | Grouped by base path, searchable, show more |
+| Latency chart | Response time over the last N requests |
+| API Endpoints | Grouped by base path, searchable |
 | Recent Requests | All requests, paginated (25 at a time) |
-| Slowest Requests | Top 50 slowest across selected time range |
+| Slowest Requests | Top 50 slowest in the selected time range |
 
 ---
 
@@ -133,10 +157,9 @@ Visit `http://localhost:3000/request-tracker` after starting your server.
 ```js
 setupRequestTracker(app, {
   // What to track
-  trackHeaders: true,
-  trackBody: false,
+  trackHeaders:    true,
+  trackBody:       false,
   trackQueryParams: true,
-  trackUserInfo: false,
 
   // Exclude paths (tracker routes are always excluded automatically)
   excludedPaths: ['/health', '/metrics'],
@@ -144,36 +167,142 @@ setupRequestTracker(app, {
   // Mask sensitive fields in logs
   maskSensitiveFields: ['password', 'token', 'apiKey'],
 
-  // Anonymize IPs (192.168.1.100 → 192.168.1.***)
+  // Anonymize IPs  192.168.1.100 → 192.168.1.***
   anonymizeIP: false,
 
-  // Storage — 'file' recommended (persists across restarts)
-  storage: {
-    primary: 'file',   // 'file' | 'memory' | 'logging-only'
-  },
+  // Storage — see "Storage" section below
+  storage: { primary: 'file' },
 
   // Hook into every tracked request
   onRequest: (data) => {
-    if (data.duration > 1000) {
-      console.warn(`Slow: ${data.path} ${data.duration}ms`);
-    }
+    if (data.duration > 1000) console.warn(`Slow: ${data.path} ${data.duration}ms`);
   }
 });
 ```
 
-### Storage options
+---
 
-| Option | Description |
-|---|---|
-| `file` | Saves to `.request-tracker-data.json` in project root. Survives restarts. **Recommended.** |
-| `memory` | In-RAM only. Fast but lost on restart. |
-| `logging-only` | Prints to console/logger, no storage. |
+## Storage
+
+### Single adapter (simple)
+
+Pass a `primary` key with one of the adapter names:
+
+```js
+storage: { primary: 'file' }
+storage: { primary: 'memory' }
+storage: { primary: 'logging-only' }
+storage: { primary: 'mongodb', mongodb: { uri: 'mongodb://localhost:27017/mydb' } }
+storage: { primary: 'postgresql', postgresql: { uri: 'postgresql://user:pass@localhost/mydb' } }
+```
+
+### Multiple adapters (recommended for production)
+
+Use the `adapters` array to write to **all** listed backends simultaneously. Reads fall through to the first adapter that has data.
+
+```js
+storage: {
+  adapters: [
+    // Print every request to console
+    { type: 'logging-only', format: 'text' },
+
+    // Persist to a local JSON file (survives restarts)
+    { type: 'file', path: './logs/requests.json' },
+
+    // Also keep the latest 1 000 requests in RAM for fast dashboard queries
+    { type: 'memory', maxSize: 1000 },
+
+    // Long-term storage in MongoDB
+    { type: 'mongodb', uri: 'mongodb://localhost:27017/mydb', collection: 'requests', ttlDays: 30 },
+
+    // Or PostgreSQL
+    { type: 'postgresql', uri: 'postgresql://user:pass@localhost/mydb', table: 'requests' },
+  ]
+}
+```
+
+If a peer dependency (`mongodb`, `pg`) is missing, that adapter is silently disabled with a console warning — the other adapters keep working.
+
+---
+
+### Adapter options
+
+#### `memory`
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `maxSize` | `number` | `5000` | Max requests kept in RAM |
+| `ttl` | `number` | `3600000` | Time-to-live in ms (1 h) |
+| `onMaxReached` | `'discard'` \| `'compress'` | `'discard'` | What to do when full |
+
+```js
+{ type: 'memory', maxSize: 2000, ttl: 1800000 }
+```
+
+#### `file`
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `path` | `string` | `./.request-tracker-data.json` | Path to JSON file |
+| `maxSize` | `number` | `50000` | Max requests per file |
+| `flushIntervalMs` | `number` | `5000` | How often to write to disk |
+
+```js
+{ type: 'file', path: './logs/tracker.json', maxSize: 10000 }
+```
+
+#### `logging-only`
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `format` | `'text'` \| `'json'` | `'text'` | Log line format |
+| `logger` | `object` | `console` | Winston-compatible logger |
+| `level` | `'info'` \| `'warn'` \| `'error'` | `'info'` | Base log level |
+| `customFormatter` | `(data) => string` | — | Override formatting entirely |
+
+```js
+{ type: 'logging-only', format: 'json', logger: winstonLogger }
+```
+
+#### `mongodb`
+
+Requires: `npm install mongodb`
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `uri` | `string` | — | MongoDB connection string |
+| `connection` | `object` | — | Existing Mongoose/MongoClient connection |
+| `collection` | `string` | `'request_tracker_logs'` | Collection name |
+| `ttlDays` | `number` | `30` | Auto-delete documents older than N days |
+
+```js
+{ type: 'mongodb', uri: 'mongodb://localhost:27017/mydb', ttlDays: 7 }
+// or pass an existing mongoose connection:
+{ type: 'mongodb', connection: mongoose.connection, collection: 'http_logs' }
+```
+
+#### `postgresql`
+
+Requires: `npm install pg`
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `uri` | `string` | — | PostgreSQL connection string |
+| `connection` | `object` | — | Existing `pg.Pool` / `pg.Client` |
+| `table` | `string` | `'request_tracker_logs'` | Table name (auto-created) |
+| `ttlDays` | `number` | `30` | Auto-delete rows older than N days |
+
+```js
+{ type: 'postgresql', uri: 'postgresql://user:pass@localhost:5432/mydb' }
+// or pass an existing pool:
+{ type: 'postgresql', connection: pgPool, table: 'http_logs' }
+```
 
 ---
 
 ## JSON API Endpoints
 
-These are added automatically to your app:
+Added automatically when you call `setupRequestTracker`:
 
 | Endpoint | Description |
 |---|---|
@@ -192,72 +321,48 @@ These are added automatically to your app:
 
 ```js
 {
-  id: "req-1712315445000-a1b2c3",
-  timestamp: 1712315445000,
-  method: "POST",
-  path: "/api/users",
-  fullUrl: "http://localhost:3000/api/users",
-  statusCode: 201,
-  duration: 145,          // ms
-  requestSize: 256,       // bytes
-  responseSize: 1024,     // bytes
-  networkUsage: 1280,     // total bytes
-  userAgent: "Mozilla/5.0...",
-  ipAddress: "127.0.0.1",
-  queryParams: {},
-  requestHeaders: { ... },
+  id:              "req-1712315445000-a1b2c3",
+  timestamp:       1712315445000,
+  method:          "POST",
+  path:            "/api/users",
+  fullUrl:         "http://localhost:3000/api/users",
+  statusCode:      201,
+  duration:        145,     // ms
+  requestSize:     256,     // bytes
+  responseSize:    1024,    // bytes
+  networkUsage:    1280,    // bytes (request + response)
+  userAgent:       "Mozilla/5.0...",
+  ipAddress:       "127.0.0.1",
+  queryParams:     {},
+  requestHeaders:  { ... },
   responseHeaders: { ... }
 }
 ```
 
 ---
 
-## P95 Latency explained
+## P95 Latency
 
-P95 means "95 out of 100 requests complete within this time". The dashboard shows a plain-English label:
+P95 means "95 out of 100 requests complete within this time."
 
 | Value | Label |
 |---|---|
-| ≤ 100ms | Excellent — requests are very fast |
-| ≤ 300ms | Good — feels instant to users |
-| ≤ 600ms | Acceptable — most users won't notice |
-| ≤ 1000ms | Slow — some users may notice a delay |
-| > 1000ms | Poor — requests taking over 1 second |
+| ≤ 100 ms | Excellent — requests are very fast |
+| ≤ 300 ms | Good — feels instant to users |
+| ≤ 600 ms | Acceptable — most users won't notice |
+| ≤ 1 000 ms | Slow — some users may notice a delay |
+| > 1 000 ms | Poor — requests taking over 1 second |
 
 ---
 
 ## Security
 
-The tracker automatically excludes its own routes (`/request-tracker`, `/admin/request-tracker/*`) from being tracked so they don't flood your logs.
-
-For production, protect the dashboard behind auth middleware:
+The tracker auto-excludes its own routes from being tracked. For production, protect the dashboard with auth middleware before calling `setupRequestTracker`:
 
 ```js
 app.use('/request-tracker', requireAdminAuth);
 app.use('/admin/request-tracker', requireAdminAuth);
 setupRequestTracker(app, { ... });
-```
-
----
-
-## Running the example
-
-```bash
-git clone https://github.com/YOUR_USERNAME/request-tracker-pro
-cd request-tracker-pro
-npm install
-npm run build
-node examples/express-basic.js
-```
-
-Then visit `http://localhost:3000/request-tracker` and hit some routes:
-
-```
-http://localhost:3000/api/users
-http://localhost:3000/api/products
-http://localhost:3000/api/orders
-http://localhost:3000/api/analytics/summary
-http://localhost:3000/api/error/500
 ```
 
 ---
