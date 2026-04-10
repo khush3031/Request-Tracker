@@ -1,5 +1,9 @@
 # request-tracker-pro
 
+[![npm version](https://img.shields.io/npm/v/request-tracker-pro.svg)](https://www.npmjs.com/package/request-tracker-pro)
+[![CI](https://github.com/khush3031/Request-Tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/khush3031/Request-Tracker/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 HTTP request tracking and analytics middleware for Node.js. Drop one line into your app and get a live dashboard showing latency, bandwidth, error rates, and every request — with flexible, multi-adapter storage.
 
 Works with **Express**, **NestJS**, and **Next.js**. Supports **ESM** (`import`) and **CommonJS** (`require`).
@@ -155,29 +159,51 @@ Visit `http://localhost:3000/request-tracker` after starting your server.
 
 ## Configuration
 
+All options are optional — sensible defaults are applied for everything.
+
 ```js
 setupRequestTracker(app, {
-  // What to track
-  trackHeaders:    true,
-  trackBody:       false,
-  trackQueryParams: true,
+  // ── What to capture ─────────────────────────────────────────────
+  trackHeaders:        true,   // capture req/res headers
+  trackBody:           false,  // capture request body (off by default)
+  trackQueryParams:    true,   // capture ?query=params
 
-  // Exclude paths (tracker routes are always excluded automatically)
-  excludedPaths: ['/health', '/metrics'],
+  // ── Exclusions ───────────────────────────────────────────────────
+  // Tracker's own routes (/request-tracker, /admin/request-tracker)
+  // are always excluded automatically.
+  excludedPaths:       ['/health', '/metrics'],
+  excludedPathPatterns: [/^\/internal\//],  // also accepts RegExp
 
-  // Mask sensitive fields in logs
-  maskSensitiveFields: ['password', 'token', 'apiKey'],
+  // ── Security ─────────────────────────────────────────────────────
+  maskSensitiveFields: ['password', 'token', 'apiKey', 'secret'],
+  anonymizeIP:         false,  // 192.168.1.100 → 192.168.1.***
 
-  // Anonymize IPs  192.168.1.100 → 192.168.1.***
-  anonymizeIP: false,
+  // ── Storage (default for all routes) ─────────────────────────────
+  // See "Storage" section for all adapter options.
+  storage: { adapters: [{ type: 'file' }, { type: 'memory', maxSize: 1000 }] },
 
-  // Storage — see "Storage" section below
-  storage: { primary: 'file' },
+  // ── Route-specific storage (optional) ────────────────────────────
+  // Override the storage adapter for individual endpoints.
+  // See "Route-Specific Storage" section for full details.
+  routes: [
+    {
+      path:      '/api/auth/**',
+      trackBody: true,
+      storage:   { type: 'file', path: './logs/auth-audit.json' }
+    }
+  ],
 
-  // Hook into every tracked request
+  // ── Callbacks ────────────────────────────────────────────────────
   onRequest: (data) => {
     if (data.duration > 1000) console.warn(`Slow: ${data.path} ${data.duration}ms`);
-  }
+  },
+  onError: (err, data) => {
+    console.error(`Tracker error on ${data.path}:`, err.message);
+  },
+
+  // ── Batching ─────────────────────────────────────────────────────
+  batchSize:     1,     // flush after N requests (1 = immediate)
+  flushInterval: 5000,  // also flush every N ms
 });
 ```
 
@@ -452,6 +478,31 @@ The tracker auto-excludes its own routes from being tracked. For production, pro
 app.use('/request-tracker', requireAdminAuth);
 app.use('/admin/request-tracker', requireAdminAuth);
 setupRequestTracker(app, { ... });
+```
+
+---
+
+## Contributing
+
+All changes must pass the CI pipeline before merging to `main`.
+
+```
+Push / PR to main
+       │
+       ▼
+  lint → build → test          ← must pass
+       │
+       │  push to main only
+       ▼
+  version changed? → npm publish + git tag
+```
+
+To release a new version:
+
+```bash
+npm version patch   # or minor / major
+git push origin main
+# CI publishes automatically — do not run npm publish locally
 ```
 
 ---
