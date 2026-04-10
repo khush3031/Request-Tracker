@@ -24,7 +24,7 @@
     "test:watch": "jest --watch",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
-    "prepublishOnly": "npm run build && npm run test",
+    "prepublishOnly": "node -e \"if(!process.env.CI){console.error('\\n  ERROR: Direct publish is disabled.\\n  All publishing must go through the GitHub Actions CI/CD pipeline.\\n  Bump the version in package.json and push to main.\\n');process.exit(1)}\" && npm run build && npm run test",
     "dashboard": "cd dashboard && npm run dev",
     "example": "node examples/express-basic.js"
   },
