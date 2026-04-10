@@ -10,6 +10,7 @@ Works with **Express**, **NestJS**, and **Next.js**. Supports **ESM** (`import`)
 
 - **Live dashboard** at `/request-tracker` — dark-themed, auto-refreshes every 10 s
 - **Multi-storage** — write to multiple backends simultaneously (file + MongoDB + console, etc.)
+- **Route-specific storage** — send `/api/payments` to MongoDB, `/api/auth/**` to a file audit log, everything else to memory
 - **Persistent storage** — file, MongoDB, and PostgreSQL adapters survive server restarts
 - **Time-range filtering** — 5 min / 10 min / 1 h / 6 h / All
 - **P95 latency** with plain-English labels ("Good — feels instant to users")
@@ -296,6 +297,94 @@ Requires: `npm install pg`
 { type: 'postgresql', uri: 'postgresql://user:pass@localhost:5432/mydb' }
 // or pass an existing pool:
 { type: 'postgresql', connection: pgPool, table: 'http_logs' }
+```
+
+---
+
+## Route-Specific Storage
+
+Send individual endpoints to a **dedicated storage adapter** instead of the global one. Rules are evaluated in order — the first match wins. Unmatched requests fall through to the global `storage` config unchanged.
+
+```js
+setupRequestTracker(app, {
+  // Global default — used when no route rule matches
+  storage: { adapters: [{ type: 'memory', maxSize: 1000 }] },
+
+  routes: [
+    // Payments (POST/PUT only) → MongoDB for compliance
+    {
+      path:      '/api/payments',
+      methods:   ['POST', 'PUT'],
+      trackBody: true,
+      storage:   { type: 'mongodb', uri: 'mongodb://localhost:27017/mydb', collection: 'payments_log' }
+    },
+
+    // All auth routes → dedicated file audit log, always capture body
+    {
+      path:      '/api/auth/**',
+      trackBody: true,
+      storage:   { type: 'file', path: './logs/auth-audit.json' }
+    },
+
+    // Admin routes → fan-out to PostgreSQL + console
+    {
+      path:    /^\/api\/admin/,
+      storage: [
+        { type: 'postgresql', uri: 'postgresql://user:pass@localhost/mydb' },
+        { type: 'logging-only', format: 'json' }
+      ]
+    },
+
+    // Orders → console only, no persistence
+    {
+      path:    '/api/orders*',
+      storage: { type: 'logging-only', format: 'text' }
+    }
+  ]
+});
+```
+
+### RouteRule options
+
+| Option | Type | Required | Description |
+|---|---|---|---|
+| `path` | `string \| RegExp` | Yes | Path to match (exact, glob, or RegExp) |
+| `methods` | `string[]` | No | HTTP methods to match — omit to match all methods |
+| `storage` | `AdapterConfig \| AdapterConfig[]` | Yes | One adapter or an array (fan-out) |
+| `trackBody` | `boolean` | No | Override global `trackBody` for this route |
+| `trackHeaders` | `boolean` | No | Override global `trackHeaders` for this route |
+| `maskSensitiveFields` | `string[]` | No | Override global mask list for this route |
+
+### Path pattern syntax
+
+| Pattern | Matches | Does not match |
+|---|---|---|
+| `'/api/users'` | `/api/users` only | `/api/users/1` |
+| `'/api/users/*'` | `/api/users/1` | `/api/users/1/profile` |
+| `'/api/users/**'` | `/api/users/1`, `/api/users/1/profile` | `/api/users` (bare) |
+| `'/api/users*'` | `/api/users`, `/api/users/1`, `/api/users/1/profile` | `/api/products` |
+| `/^\/api\/admin/` | `/api/admin`, `/api/admin/anything` | `/api/users` |
+
+> **Tip:** Use `'/api/orders*'` (single `*` at end) when you want to match both the bare path `/api/orders` **and** all sub-paths like `/api/orders/123`.
+
+### Per-route config overrides
+
+`trackBody`, `trackHeaders`, and `maskSensitiveFields` on a rule override the global config **only for requests matched by that rule**. All other global settings (masking, IP anonymization, `onRequest` callback, etc.) still apply normally.
+
+```js
+setupRequestTracker(app, {
+  trackBody: false,           // global default: don't capture body
+  maskSensitiveFields: ['password', 'token'],
+
+  routes: [
+    {
+      path:                '/api/auth/**',
+      trackBody:           true,        // capture body only for auth routes
+      maskSensitiveFields: ['password', 'token', 'otp', 'refreshToken'],
+      storage:             { type: 'file', path: './logs/auth.json' }
+    }
+  ]
+});
 ```
 
 ---

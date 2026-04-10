@@ -11,6 +11,7 @@ import { generateRequestId, getRequestSize, getResponseSize, getClientIP, parseD
 import {
   TrackedRequest,
   TrackerConfig,
+  RouteRule,
   StorageType,
   StorageAdapterConfig,
   RequestStats,
@@ -33,6 +34,8 @@ export class RequestTracker implements RequestTrackerInstance {
   private config: TrackerConfig;
   private batch: TrackedRequest[] = [];
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Initialized storage adapter for each RouteRule (keyed by rule object reference). */
+  private routeAdapters: Map<RouteRule, StorageAdapter> = new Map();
 
   constructor(config: Partial<TrackerConfig> = {}) {
     // Default configuration
@@ -59,11 +62,15 @@ export class RequestTracker implements RequestTrackerInstance {
       onRequest: config.onRequest,
       onError: config.onError,
       batchSize: config.batchSize ?? 1,
-      flushInterval: config.flushInterval ?? 5000
+      flushInterval: config.flushInterval ?? 5000,
+      routes: config.routes ?? []
     };
 
-    // Initialize storage
+    // Initialize global storage
     this.storage = this.initializeStorage();
+
+    // Initialize per-route storage adapters
+    this.initializeRouteAdapters();
 
     // Start auto-flush timer
     this.startAutoFlush();
@@ -163,6 +170,71 @@ export class RequestTracker implements RequestTrackerInstance {
   }
 
   /**
+   * Build and cache a StorageAdapter for each RouteRule.
+   * Called once at construction time.
+   */
+  private initializeRouteAdapters(): void {
+    if (!this.config.routes || this.config.routes.length === 0) return;
+
+    for (const rule of this.config.routes) {
+      const cfgs = Array.isArray(rule.storage) ? rule.storage : [rule.storage];
+      const adapters = cfgs.map(cfg => this.createSingleAdapter(cfg));
+      const adapter = adapters.length === 1 ? adapters[0] : new MultiStorage(adapters);
+      this.routeAdapters.set(rule, adapter);
+    }
+  }
+
+  /**
+   * Return the first RouteRule whose path and (optional) method filter match,
+   * or null if no rule matches (→ use global storage).
+   */
+  private findMatchingRule(path: string, method: string): RouteRule | null {
+    if (!this.config.routes || this.config.routes.length === 0) return null;
+
+    for (const rule of this.config.routes) {
+      if (rule.methods && rule.methods.length > 0) {
+        const upper = method.toUpperCase();
+        if (!rule.methods.map(m => m.toUpperCase()).includes(upper)) continue;
+      }
+      if (this.matchPath(rule.path, path)) return rule;
+    }
+
+    return null;
+  }
+
+  /**
+   * Match a request path against a RouteRule path pattern.
+   * Supports:
+   *   - Exact strings:  '/api/users'
+   *   - Glob wildcards: '/api/users/*'  (single segment)
+   *                     '/api/users/**' (any depth)
+   *   - RegExp:         /^\/api\/admin/
+   */
+  private matchPath(pattern: string | RegExp, path: string): boolean {
+    if (pattern instanceof RegExp) return pattern.test(path);
+    if (pattern === path) return true;
+
+    // Convert glob to regex:
+    //   1. Split on '**' → rejoin with '.*'  (any depth)
+    //   2. Split on '*'  → rejoin with '[^/]*' (single segment)
+    //   3. Escape all other regex special chars inside each literal segment
+    const regexStr =
+      '^' +
+      pattern
+        .split('**')
+        .map(part =>
+          part
+            .split('*')
+            .map(s => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
+            .join('[^/]*')
+        )
+        .join('.*') +
+      '$';
+
+    return new RegExp(regexStr).test(path);
+  }
+
+  /**
    * Express middleware function
    */
   middleware() {
@@ -176,21 +248,30 @@ export class RequestTracker implements RequestTrackerInstance {
       const requestId = generateRequestId();
       const startTime = Date.now();
 
+      // Resolve the matching route rule once, before the response arrives.
+      // req.path is already known at this point; method is also stable.
+      const matchedRule = tracker.findMatchingRule(req.path, req.method);
+
       // Use the response 'finish' event — fires reliably in all Express versions
       res.on('finish', () => {
         const endTime = Date.now();
         const duration = endTime - startTime;
 
-        const requestHeaders = tracker.config.trackHeaders
+        // Per-rule overrides fall back to global config when not specified
+        const effectiveTrackHeaders  = matchedRule?.trackHeaders        ?? tracker.config.trackHeaders;
+        const effectiveTrackBody     = matchedRule?.trackBody           ?? tracker.config.trackBody;
+        const effectiveMaskFields    = matchedRule?.maskSensitiveFields ?? tracker.config.maskSensitiveFields;
+
+        const requestHeaders = effectiveTrackHeaders
           ? tracker.getHeadersObject(req.headers)
           : undefined;
 
-        const responseHeaders = tracker.config.trackHeaders
+        const responseHeaders = effectiveTrackHeaders
           ? tracker.getHeadersObject(res.getHeaders ? res.getHeaders() : {})
           : undefined;
 
         const requestBody =
-          tracker.config.trackBody && req.body
+          effectiveTrackBody && req.body
             ? tracker.truncateData(req.body, tracker.config.maxBodySize)
             : undefined;
 
@@ -224,10 +305,10 @@ export class RequestTracker implements RequestTrackerInstance {
 
         trackedRequest.networkUsage = trackedRequest.requestSize + trackedRequest.responseSize;
 
-        if (tracker.config.maskSensitiveFields.length > 0) {
+        if (effectiveMaskFields.length > 0) {
           Object.assign(
             trackedRequest,
-            RequestFormatter.maskSensitiveData(trackedRequest, tracker.config.maskSensitiveFields)
+            RequestFormatter.maskSensitiveData(trackedRequest, effectiveMaskFields)
           );
         }
 
@@ -235,9 +316,20 @@ export class RequestTracker implements RequestTrackerInstance {
           try { tracker.config.onRequest(trackedRequest); } catch {}
         }
 
-        tracker.batch.push(trackedRequest);
-        if (tracker.batch.length >= tracker.config.batchSize) {
-          tracker.flushBatch();
+        if (matchedRule) {
+          // Route-specific: save directly to the rule's adapter, bypass global batch
+          const ruleAdapter = tracker.routeAdapters.get(matchedRule)!;
+          ruleAdapter.save(trackedRequest).catch(err => {
+            if (tracker.config.onError) {
+              try { tracker.config.onError(err, trackedRequest); } catch {}
+            }
+          });
+        } else {
+          // Default: add to global batch (existing behaviour, unchanged)
+          tracker.batch.push(trackedRequest);
+          if (tracker.batch.length >= tracker.config.batchSize) {
+            tracker.flushBatch();
+          }
         }
       });
 

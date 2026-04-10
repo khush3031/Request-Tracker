@@ -70,6 +70,53 @@ export interface TrackedRequest {
 }
 
 /**
+ * Route-specific tracking rule.
+ * Matched requests are saved to `storage` instead of the global storage.
+ * Rules are evaluated in order — the first match wins.
+ *
+ * @example
+ * routes: [
+ *   {
+ *     path: '/api/payments',
+ *     methods: ['POST', 'PUT'],
+ *     storage: { type: 'mongodb', uri: 'mongodb://...' }
+ *   },
+ *   {
+ *     path: '/api/auth/**',   // glob wildcard
+ *     storage: { type: 'file', path: './logs/auth-audit.json' }
+ *   },
+ *   {
+ *     path: /^\/api\/admin/, // RegExp also accepted
+ *     storage: [
+ *       { type: 'postgresql', uri: 'postgresql://...' },
+ *       { type: 'logging-only' }
+ *     ]
+ *   }
+ * ]
+ */
+export interface RouteRule {
+  /**
+   * Exact path, glob pattern, or RegExp to match against `req.path`.
+   *
+   * Glob rules:
+   *   `*`  — matches a single path segment  (e.g. `/api/users/*` matches `/api/users/1`)
+   *   `**` — matches any depth              (e.g. `/api/users/**` matches `/api/users/1/profile`)
+   *
+   * Note: `/api/orders/**` does NOT match `/api/orders` (no trailing segment).
+   * Use `/api/orders*` to match both `/api/orders` and `/api/orders/123`.
+   */
+  path: string | RegExp;
+  /** HTTP methods to match (case-insensitive). Omit to match all methods. */
+  methods?: string[];
+  /** One adapter or an array of adapters (fan-out) to save matched requests to. */
+  storage: StorageAdapterConfig | StorageAdapterConfig[];
+  // Per-rule overrides — fall back to global config when not set
+  trackBody?: boolean;
+  trackHeaders?: boolean;
+  maskSensitiveFields?: string[];
+}
+
+/**
  * Configuration for the tracker
  */
 export interface TrackerConfig {
@@ -78,28 +125,35 @@ export interface TrackerConfig {
   trackBody: boolean;
   trackQueryParams: boolean;
   trackUserInfo: boolean;
-  
+
   // Paths to exclude from tracking
   excludedPaths: string[];
   excludedPathPatterns: RegExp[];
-  
+
   // Body size limits
   maxBodySize: number; // bytes
   maxHeaderSize: number; // bytes
-  
+
   // Sensitive fields to mask
   maskSensitiveFields: string[];
-  
+
   // IP anonymization
   anonymizeIP: boolean;
-  
-  // Storage configuration
+
+  // Storage configuration (default — used when no route rule matches)
   storage: StorageConfig;
-  
+
+  /**
+   * Per-endpoint routing rules.
+   * Each matched request is saved to the rule's storage instead of the global storage.
+   * Rules are evaluated in order; the first match wins.
+   */
+  routes?: RouteRule[];
+
   // Callbacks
   onRequest?: (data: TrackedRequest) => void;
   onError?: (error: Error, request: TrackedRequest) => void;
-  
+
   // Batch processing
   batchSize: number;
   flushInterval: number; // milliseconds
